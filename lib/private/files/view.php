@@ -670,12 +670,14 @@ class View {
 					} else {
 						$result = false;
 					}
+				// moving a file/folder within the same mount point
 				} elseif ($storage1 == $storage2) {
 					if ($storage1) {
 						$result = $storage1->rename($internalPath1, $internalPath2);
 					} else {
 						$result = false;
 					}
+				// moving a file/folder between storages (from $storage1 to $storage2)
 				} else {
 					$result = $storage2->moveFromStorage($storage1, $internalPath1, $internalPath2);
 				}
@@ -695,11 +697,6 @@ class View {
 
 				$this->unlockFile($path1, ILockingProvider::LOCK_EXCLUSIVE);
 				$this->unlockFile($path2, ILockingProvider::LOCK_EXCLUSIVE);
-
-				if ($internalPath1 === '' and $mount1 instanceof MoveableMount) {
-					// since $path2 now points to a different storage we need to unlock the path on the old storage separately
-					$storage2->releaseLock($internalPath2, ILockingProvider::LOCK_EXCLUSIVE, $this->lockingProvider);
-				}
 
 				if ((Cache\Scanner::isPartialFile($path1) && !Cache\Scanner::isPartialFile($path2)) && $result !== false) {
 					if ($this->shouldEmitHooks()) {
@@ -1700,6 +1697,27 @@ class View {
 	}
 
 	/**
+	 * Returns the mount point for which to lock
+	 *
+	 * @param string $absolutePath absolute path
+	 *
+	 * @return \OC\Files\Mount\MountPoint mount point
+	 */
+	private function getMountForLock($absolutePath) {
+		$mount = Filesystem::getMountManager()->find($absolutePath);
+		if (!$mount) {
+			return null;
+		}
+		$internalPath = $mount->getInternalPath($absolutePath);
+		if ($internalPath === '') {
+			// instead of locking the root of another storage,
+			// lock the mount point path instead
+			$mount = Filesystem::getMountManager()->find(dirname($absolutePath));
+		}
+		return $mount;
+	}
+
+	/**
 	 * Lock the given path
 	 *
 	 * @param string $path the path of the file to lock, relative to the view
@@ -1714,7 +1732,7 @@ class View {
 			return false;
 		}
 
-		$mount = $this->getMount($path);
+		$mount = $this->getMountForLock($absolutePath);
 		if ($mount) {
 			try {
 				$mount->getStorage()->acquireLock(
@@ -1750,7 +1768,7 @@ class View {
 			return false;
 		}
 
-		$mount = $this->getMount($path);
+		$mount = $this->getMountForLock($absolutePath);
 		if ($mount) {
 			try {
 				$mount->getStorage()->changeLock(
@@ -1784,7 +1802,7 @@ class View {
 			return false;
 		}
 
-		$mount = $this->getMount($path);
+		$mount = $this->getMountForLock($absolutePath);
 		if ($mount) {
 			$mount->getStorage()->releaseLock(
 				$mount->getInternalPath($absolutePath),

@@ -1162,6 +1162,36 @@ class View extends \Test\TestCase {
 		$this->assertFalse($view->lockFile($pathPrefix . '/foo/bar', ILockingProvider::LOCK_EXCLUSIVE));
 	}
 
+	/**
+	 * Test that locks are on mount point paths instead of mount root
+	 */
+	public function testLockMountPointPathInsteadOfMountRoot() {
+		$lockingProvider = \OC::$server->getLockingProvider();
+		$view = new \OC\Files\View('/testuser/files/');
+		$storage = new Temporary([]);
+		\OC\Files\Filesystem::mount($storage, [], '/');
+		$mountedStorage = new Temporary([]);
+		\OC\Files\Filesystem::mount($mountedStorage, [], '/testuser/files/mountpoint');
+
+		$this->assertTrue(
+			$view->lockFile('/mountpoint', ILockingProvider::LOCK_EXCLUSIVE),
+			'Can lock mount point'
+		);
+
+		// no exception here because mount root was not locked
+		$mountedStorage->acquireLock('', ILockingProvider::LOCK_EXCLUSIVE, $lockingProvider);
+
+		$thrown = true;
+		try {
+			$storage->acquireLock('/testuser/files/mountpoint', ILockingProvider::LOCK_EXCLUSIVE, $lockingProvider);
+		} catch (\OCP\Lock\LockedException $e) {
+			$thrown = true;
+		}
+		$this->assertTrue($thrown, 'Mount point path was locked on original storage');
+
+		$lockingProvider->releaseAll();
+	}
+
 	public function dataLockPaths() {
 		return [
 			['/testuser/{folder}', ''],
