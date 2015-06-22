@@ -61,24 +61,33 @@ class ChangePropagator extends BasicEmitter {
 	 * @param int $time (optional) the mtime to set for the folders, if not set the current time is used
 	 */
 	public function propagateChanges($time = null) {
+		foreach ($this->changedFiles as $changedFile) {
+			$this->handlePropagationForFile($changedFile, true, null);
+		}
+
 		$parents = $this->getAllParents();
 		$this->changedFiles = array();
 		if (!$time) {
 			$time = time();
 		}
 		foreach ($parents as $parent) {
-			/**
-			 * @var \OC\Files\Storage\Storage $storage
-			 * @var string $internalPath
-			 */
+			$this->handlePropagationForFile($parent, false, $time);
+		}
+	}
 
-			list($storage, $internalPath) = $this->view->resolvePath($parent);
-			if ($storage) {
-				$cache = $storage->getCache();
-				$entry = $cache->get($internalPath);
+	private function handlePropagationForFile($path, $hooksOnly, $time) {
+		/**
+		 * @var \OC\Files\Storage\Storage $storage
+		 * @var string $internalPath
+		 */
+		list($storage, $internalPath) = $this->view->resolvePath($path);
+		if ($storage) {
+			$cache = $storage->getCache();
+			$entry = $cache->get($internalPath);
+			if (!$hooksOnly) {
 				$cache->update($entry['fileid'], array('mtime' => max($time, $entry['mtime']), 'etag' => $storage->getETag($internalPath)));
-				$this->emit('\OC\Files', 'propagate', [$parent, $entry]);
 			}
+			$this->emit('\OC\Files', 'propagate', [$path, $entry]);
 		}
 	}
 
